@@ -1,0 +1,7 @@
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - pip
+  - pip:
+      - tensorflow[and-cuda]>=2.16.2

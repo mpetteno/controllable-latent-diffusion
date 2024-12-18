@@ -1,1 +1,2 @@
-# controllable-latent-diffusion
+# Controllable Latent Diffusion for Symbolic Music Generation
+
