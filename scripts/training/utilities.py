@@ -269,9 +269,24 @@ def load_pitch_seq_dataset(dataset_config_path: str,
     return tfrecord_loader.load_dataset(), get_input_shape(), dataset_cardinality
 
 
-def get_trainer(trainer_config_path: Path, model: keras.Model) -> Trainer:
+def get_latent_diffusion_trainer(trainer_config_path: Path, model: keras.Model) -> Trainer:
     trainer = Trainer(model, config_file_path=trainer_config_path)
     trainer.compile(
+        lr_schedule=keras.optimizers.schedules.ExponentialDecay(
+            **trainer.config["compile"]["optimizer"]["config"]["learning_rate"]
+        )
+    )
+    return trainer
+
+
+def get_vae_trainer(trainer_config_path: Path, model: keras.Model) -> Trainer:
+    trainer = Trainer(model, config_file_path=trainer_config_path)
+    trainer.compile(
+        loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+        metrics=[keras.metrics.SparseCategoricalCrossentropy(from_logits=True),
+                 keras.metrics.SparseCategoricalAccuracy(),
+                 keras.metrics.SparseTopKCategoricalAccuracy(k=3, name="sparse_top_3_categorical_accuracy"),
+                 keras.metrics.SparseTopKCategoricalAccuracy(k=5, name="sparse_top_5_categorical_accuracy")],
         lr_schedule=keras.optimizers.schedules.ExponentialDecay(
             **trainer.config["compile"]["optimizer"]["config"]["learning_rate"]
         )

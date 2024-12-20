@@ -35,7 +35,7 @@ if __name__ == '__main__':
             hierarchical_decoder=args.hierarchical_decoder
         )
         vae.build(input_shape)
-        trainer = utilities.get_trainer(model=vae, trainer_config_path=args.trainer_config_path)
+        trainer = utilities.get_vae_trainer(model=vae, trainer_config_path=args.trainer_config_path)
         history = trainer.train(
             train_data=train_data[0],
             train_data_cardinality=train_data[1],
