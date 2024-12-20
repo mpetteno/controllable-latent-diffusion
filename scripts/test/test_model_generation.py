@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from resolv_mir.note_sequence.io import midi_io
+from resolv_ml.models.dlvm.misc.latent_diffusion import LatentDiffusion
 from resolv_pipelines.data.representation.mir import PitchSequenceRepresentation
 
 import utilities
@@ -20,6 +21,7 @@ def test_model_generation(args):
         model = keras.saving.load_model(args.model_path, compile=False)
         model.compile(run_eagerly=True)
         model.trainable = False
+        model._diffusion._sampling_timesteps = 1000
         # sample N = dataset_cardinality instances from model's prior
         latent_codes = model.get_latent_codes(keras.ops.convert_to_tensor(args.dataset_cardinality)).numpy()
         # control regularized dimension
@@ -36,10 +38,12 @@ def test_model_generation(args):
             normalizing_flow = None
 
         # generate the sequence
-        generated_sequences= model._vae.decode(inputs=(latent_codes, keras.ops.convert_to_tensor(args.sequence_length)))
-        # generated_sequences, _, _ = model.sample(
-        #     inputs=(latent_codes, keras.ops.convert_to_tensor(args.sequence_length))
+        # generated_sequences= model._vae.decode(
+        #   inputs=(latent_codes, keras.ops.convert_to_tensor(args.sequence_length))
         # )
+        generated_sequences, _, _ = model.sample(
+            inputs=(latent_codes, keras.ops.convert_to_tensor(args.sequence_length))
+        )
         generated_sequences_attrs, hold_note_start_seq_count = utilities.compute_sequences_attributes(
             generated_sequences.numpy(), attribute, args.sequence_length)
         # plot generated sequences attributes histogram
@@ -67,7 +71,7 @@ def test_model_generation(args):
         # convert generated sequences to MIDI and save to disk
         representation = PitchSequenceRepresentation(args.sequence_length)
         seq_to_save_count = min(args.dataset_cardinality, args.num_midi_to_save)
-        random_idxes = [random.randint(0, args.dataset_cardinality) for _ in range(seq_to_save_count)]
+        random_idxes = [random.randint(0, args.dataset_cardinality - 1) for _ in range(seq_to_save_count)]
         for idx, generated_sequence in enumerate(keras.ops.take(generated_sequences, indices=random_idxes, axis=0)):
             generated_note_sequence = representation.to_canonical_format(generated_sequence, attributes=None)
             filename = f"midi/{attribute}_{latent_codes[random_idxes[idx], args.regularized_dimension]:.2f}.midi"
@@ -118,6 +122,8 @@ if __name__ == '__main__':
     parser.add_argument('--control-reg-dim', action="store_true",
                         help='Control the regularized latent dimension of the sampled latent codes using the min and '
                              'max values provided in `--latent-min-val` and `--latent-max-val.`')
+    parser.add_argument('--sampling-steps', help='Number of steps for diffusion sampling.', default=100, required=False,
+                        type=int)
     parser.add_argument('--latent-min-val', help='Minimum value for manipulation of the regularized latent dimension.',
                         default=-4.0, required=False, type=float)
     parser.add_argument('--latent-max-val', help='Maximum value for manipulation of the regularized latent dimension.',
