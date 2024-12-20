@@ -21,7 +21,7 @@ def test_model_generation(args):
         model = keras.saving.load_model(args.model_path, compile=False)
         model.compile(run_eagerly=True)
         model.trainable = False
-        model._diffusion._sampling_timesteps = 1000
+        model._diffusion._sampling_timesteps = args.sampling_steps
         # sample N = dataset_cardinality instances from model's prior
         latent_codes = model.get_latent_codes(keras.ops.convert_to_tensor(args.dataset_cardinality)).numpy()
         # control regularized dimension
