@@ -1,14 +1,13 @@
 """
 Usage example:
 
-    python ./scripts/ml/training/train_latent_diffusion.py \
-        --model-config-path=./scripts/training/config/local/models/latent_diffusion.json \
-        --trainer-config-path=./scripts/training/config/local/trainers/latent_diffusion_trainer.json \
+    python ./scripts/training/train_standard_vae.py \
+        --model-config-path=./scripts/training/config/local/models/vae.json \
+        --trainer-config-path=./scripts/training/config/local/trainers/standard_vae_trainer.json \
         --train-dataset-config-path=./scripts/training/config/local/datasets/train_dataset.json \
         --val-dataset-config-path=./scripts/training/config/local/datasets/val_dataset.json \
-        --attribute=contour \
+        --hierarchical-decoder \
         --gpus=0
-
 """
 import logging
 
@@ -18,8 +17,7 @@ from scripts.training import utilities
 
 
 if __name__ == '__main__':
-    arg_parser = utilities.get_arg_parser(description="Train latent diffusion model.")
-    arg_parser.add_argument('--attribute', help='Attribute to regularize.', required=True)
+    arg_parser = utilities.get_arg_parser(description="Train standard VAE model without attribute regularization.")
     args = arg_parser.parse_args()
 
     logging.getLogger().setLevel(args.logging_level)
@@ -29,12 +27,15 @@ if __name__ == '__main__':
         train_data, val_data, input_shape = utilities.load_datasets(
             train_dataset_config_path=args.train_dataset_config_path,
             val_dataset_config_path=args.val_dataset_config_path,
-            trainer_config_path=args.trainer_config_path,
-            attribute=args.attribute
+            trainer_config_path=args.trainer_config_path
         )
-        latent_diffusion = utilities.get_latent_diffusion_model(model_config_path=args.model_config_path)
-        latent_diffusion.build(input_shape)
-        trainer = utilities.get_trainer(model=latent_diffusion, trainer_config_path=args.trainer_config_path)
+        vae = utilities.get_vae_model(
+            model_config_path=args.model_config_path,
+            trainer_config_path=args.trainer_config_path,
+            hierarchical_decoder=args.hierarchical_decoder
+        )
+        vae.build(input_shape)
+        trainer = utilities.get_trainer(model=vae, trainer_config_path=args.trainer_config_path)
         history = trainer.train(
             train_data=train_data[0],
             train_data_cardinality=train_data[1],

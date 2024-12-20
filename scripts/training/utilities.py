@@ -4,15 +4,22 @@ import json
 import logging
 import math
 from pathlib import Path
-from typing import List
+from typing import List, Dict
 
 import keras
 import tensorflow as tf
 from resolv_ml.models.dlvm.diffusion.ddim import DDIM
 from resolv_ml.models.dlvm.misc.latent_diffusion import LatentDiffusion
+from resolv_ml.models.dlvm.vae.ar_vae import AttributeRegularizedVAE
+from resolv_ml.models.dlvm.vae.base import VAE
+from resolv_ml.models.dlvm.vae.vanilla_vae import StandardVAE
 from resolv_ml.models.nn.denoisers import DenseDenoiser
 from resolv_ml.models.nn.embeddings import SinusoidalPositionalEncoding
+from resolv_ml.models.seq2seq.rnn.decoders import HierarchicalRNNDecoder, RNNAutoregressiveDecoder
+from resolv_ml.models.seq2seq.rnn.encoders import BidirectionalRNNEncoder
 from resolv_ml.training.trainer import Trainer
+from resolv_ml.utilities.regularizers.attribute import AttributeRegularizer
+from resolv_ml.utilities.schedulers import get_scheduler
 from resolv_pipelines.data.loaders import TFRecordLoader
 from resolv_pipelines.data.representation.mir import PitchSequenceRepresentation
 
@@ -59,11 +66,113 @@ def get_distributed_strategy(gpu_ids: List[int] = None, memory_growth: bool = Fa
     return strategy
 
 
-def get_model(vae_config_path: str, diffusion_config_path: str) -> LatentDiffusion:
-    with open(vae_config_path) as file:
+def get_vae_model(model_config_path: str,
+                  trainer_config_path: str,
+                  hierarchical_decoder: bool = False,
+                  attribute_proc_layer: keras.Layer = None,
+                  attribute_regularizers: Dict[str, AttributeRegularizer] = None,
+                  inference_layer: keras.Layer = None) -> VAE:
+    with open(model_config_path) as file:
+        model_config = json.load(file)
+        schedulers_config = model_config["schedulers"]
+
+    with open(trainer_config_path) as file:
+        fit_config = json.load(file)["fit"]
+
+    encoder_config = model_config["encoder"]
+    encoder = BidirectionalRNNEncoder(
+        enc_rnn_sizes=encoder_config["enc_rnn_sizes"],
+        embedding_layer=keras.layers.Embedding(
+            input_dim=model_config["num_classes"],
+            output_dim=model_config["embedding_size"],
+            name="encoder_embedding"
+        ),
+        dropout=encoder_config["dropout"]
+    )
+
+    if hierarchical_decoder:
+        hier_decoder_config = model_config["hier_decoder"]
+        core_decoder_config = hier_decoder_config["core_decoder"]
+        decoder = HierarchicalRNNDecoder(
+            level_lengths=hier_decoder_config["level_lengths"],
+            dec_rnn_sizes=hier_decoder_config["dec_rnn_sizes"],
+            dropout=hier_decoder_config["dropout"],
+            sampling_scheduler=get_scheduler(
+                schedule_type=schedulers_config["sampling_probability"]["type"],
+                schedule_config=schedulers_config["sampling_probability"]["config"]
+            ),
+            core_decoder=RNNAutoregressiveDecoder(
+                dec_rnn_sizes=core_decoder_config["dec_rnn_sizes"],
+                num_classes=model_config["num_classes"],
+                embedding_layer=keras.layers.Embedding(
+                    input_dim=model_config["num_classes"],
+                    output_dim=model_config["embedding_size"],
+                    name="decoder_embedding"
+                ),
+                dropout=core_decoder_config["dropout"]
+            )
+        )
+    else:
+        decoder_config = model_config["decoder"]
+        decoder = RNNAutoregressiveDecoder(
+            dec_rnn_sizes=decoder_config["dec_rnn_sizes"],
+            num_classes=model_config["num_classes"],
+            embedding_layer=keras.layers.Embedding(
+                input_dim=model_config["num_classes"],
+                output_dim=model_config["embedding_size"],
+                name="decoder_embedding"
+            ),
+            dropout=decoder_config["dropout"],
+            sampling_scheduler=get_scheduler(
+                schedule_type=schedulers_config["sampling_probability"]["type"],
+                schedule_config={
+                    **schedulers_config["sampling_probability"]["config"],
+                    "total_steps": fit_config["total_steps"]
+                }
+            )
+        )
+
+    if attribute_regularizers:
+        return AttributeRegularizedVAE(
+            z_size=model_config["z_size"],
+            input_processing_layer=encoder,
+            generative_layer=decoder,
+            attribute_processing_layer=attribute_proc_layer,
+            attribute_regularizers=attribute_regularizers,
+            inference_layer=inference_layer,
+            free_bits=model_config["free_bits"],
+            div_beta_scheduler=get_scheduler(
+                schedule_type=schedulers_config["kl_div_beta"]["type"],
+                schedule_config={
+                    **schedulers_config["kl_div_beta"]["config"],
+                    "total_steps": fit_config["total_steps"]
+                }
+            )
+        )
+    else:
+        return StandardVAE(
+            z_size=model_config["z_size"],
+            input_processing_layer=encoder,
+            generative_layer=decoder,
+            free_bits=model_config["free_bits"],
+            div_beta_scheduler=get_scheduler(
+                schedule_type=schedulers_config["kl_div_beta"]["type"],
+                schedule_config={
+                    **schedulers_config["kl_div_beta"]["config"],
+                    "total_steps": fit_config["total_steps"]
+                }
+            )
+        )
+
+
+def get_latent_diffusion_model(model_config_path: str) -> LatentDiffusion:
+    with open(model_config_path) as file:
+        latent_diffusion_config = json.load(file)
+
+    with open(latent_diffusion_config["vae_config_path"]) as file:
         vae_config = json.load(file)
 
-    with open(diffusion_config_path) as file:
+    with open(latent_diffusion_config["diffusion_config_path"]) as file:
         diffusion_config = json.load(file)
         denoiser_config = diffusion_config["dense_denoiser"]
         pos_emb_config = denoiser_config["positional_embedding"]
@@ -91,7 +200,7 @@ def get_model(vae_config_path: str, diffusion_config_path: str) -> LatentDiffusi
         noise_schedule_start=diffusion_config["noise_scheduler"]["start"],
         noise_schedule_end=diffusion_config["noise_scheduler"]["end"]
     )
-    return LatentDiffusion(vae=vae_config["weights_path"], diffusion=diffusion_model)
+    return LatentDiffusion(vae=latent_diffusion_config["vae_weights_path"], diffusion=diffusion_model)
 
 
 def load_datasets(train_dataset_config_path: str,
@@ -172,9 +281,9 @@ def get_trainer(trainer_config_path: Path, model: keras.Model) -> Trainer:
 
 def get_arg_parser(description: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument('--vae-config-path', help='Path to the VAE model\'s configuration file.', required=True)
-    parser.add_argument('--diffusion-config-path', help='Path to the diffusion model\'s configuration file.',
+    parser.add_argument('--model-config-path', help='Path to the diffusion model\'s configuration file.',
                         required=True)
+    parser.add_argument('--hierarchical-decoder', help='Use a hierarchical decoder.', action="store_true")
     parser.add_argument('--trainer-config-path', help='Path to the trainer\'s configuration file.', required=True)
     parser.add_argument('--train-dataset-config-path', help='Path to the train dataset\'s configuration file.',
                         required=True)
