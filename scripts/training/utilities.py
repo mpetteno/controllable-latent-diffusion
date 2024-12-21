@@ -166,6 +166,17 @@ def get_vae_model(model_config_path: str,
 
 
 def get_latent_diffusion_model(model_config_path: str) -> LatentDiffusion:
+
+    def get_ar_noise(diff_model, batch_size: int, x=None, labels=None):
+        ar_noise_std = latent_diffusion_config["ar_noise_std"]
+        noise = diff_model.get_gaussian_noise(batch_size, x)
+        if keras.ops.is_tensor(labels):
+            for i in range(batch_size):
+                for j in range(labels.shape[-1]):
+                    updates = keras.random.normal(shape=(1,), mean=labels[i, j], stddev=ar_noise_std[str(j)])
+                    noise = keras.ops.scatter_update(noise, [(i, j)], updates)
+        return noise
+
     with open(model_config_path) as file:
         latent_diffusion_config = json.load(file)
 
@@ -190,6 +201,7 @@ def get_latent_diffusion_model(model_config_path: str) -> LatentDiffusion:
                 lookup_table=pos_emb_config["lookup_table"]
             )
         ),
+        noise_fn=get_ar_noise,
         timesteps=diffusion_config["timesteps"],
         sampling_timesteps=diffusion_config["sampling_timesteps"],
         timesteps_scheduler_type=diffusion_config["timesteps_scheduler_type"],
