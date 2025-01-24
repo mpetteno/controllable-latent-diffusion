@@ -168,9 +168,9 @@ def get_vae_model(model_config_path: str,
 def get_latent_diffusion_model(model_config_path: str) -> LatentDiffusion:
 
     def get_ar_noise(diff_model, batch_size: int, x=None, labels=None):
-        ar_noise_std = latent_diffusion_config["ar_noise_std"]
         noise = diff_model.get_gaussian_noise(batch_size, x)
         if keras.ops.is_tensor(labels):
+            ar_noise_std = latent_diffusion_config["ar_noise_std"]
             for i in range(batch_size):
                 for j in range(labels.shape[-1]):
                     updates = keras.random.normal(shape=(1,), mean=labels[i, j], stddev=ar_noise_std[str(j)])
