@@ -4,6 +4,7 @@ import random
 from pathlib import Path
 
 import keras
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
@@ -27,41 +28,43 @@ def test_model_generation(args):
         model.trainable = False
         model._diffusion._sampling_timesteps = args.sampling_steps
         # Generate latent codes and sequences with VAE
+        steps = args.dataset_cardinality//args.batch_size
         vae_generated_sequences, vae_latent_codes, input_sequences, input_sequences_attributes, _ = model._vae.predict(
-            dataset, steps=args.dataset_cardinality//args.batch_size
+            dataset, steps=steps
+        )
+        dataset_min_attr_val = np.min(input_sequences_attributes)
+        dataset_max_attr_val = np.max(input_sequences_attributes)
+        attr_conditioning_labels = keras.ops.expand_dims(
+            keras.ops.linspace(
+                start=dataset_min_attr_val, stop=dataset_max_attr_val, num=args.batch_size*steps
+            ), axis=-1
         )
         plots(sequences=vae_generated_sequences,
-              latent_codes=vae_latent_codes,
+              labels=keras.ops.squeeze(attr_conditioning_labels),
               output_dir=output_dir / "vae",
               attribute=attribute,
               args=args)
         # Generate latent codes and sequences with Diffusion
         denoised_latent_codes = []
         diff_generated_sequences = []
-        dataset_min_attr_val = np.min(input_sequences_attributes)
-        dataset_max_attr_val = np.max(input_sequences_attributes)
-        reg_dim_values = keras.ops.linspace(
-            start=dataset_min_attr_val, stop=dataset_max_attr_val, num=args.dataset_cardinality
-        )
-        for i in range(args.dataset_cardinality // args.batch_size):
-            logging.info(f"Generating sequences with Diffusion for batch {i}/"
-                         f"{args.dataset_cardinality // args.batch_size}...")
-            latent_codes = model.get_latent_codes(keras.ops.convert_to_tensor(args.batch_size)).numpy()
-            if args.control_reg_dim:
-                latent_codes[:, args.regularized_dimension] = reg_dim_values[i*args.batch_size:(i+1)*args.batch_size]
-            diff_seqs, _, diff_latent_codes = model.sample(
-                inputs=(latent_codes, keras.ops.convert_to_tensor(args.sequence_length))
+        num_samples = keras.ops.full((args.batch_size,), args.batch_size, dtype="int32")
+        decoder_inputs = keras.ops.full((args.batch_size,), args.sequence_length, dtype="int32")
+        for i in range(steps):
+            logging.info(f"Generating sequences with Diffusion for batch {i}/{steps}...")
+            batch_attr_labels = attr_conditioning_labels[i * args.batch_size:(i + 1) * args.batch_size]
+            diff_seqs, _, diff_latent_codes = model.predict(
+                x=(num_samples, batch_attr_labels, decoder_inputs), batch_size=args.batch_size
             )
-            denoised_latent_codes.extend(diff_latent_codes.numpy()[:, -1, :].tolist())
-            diff_generated_sequences.extend(diff_seqs.numpy().tolist())
+            denoised_latent_codes.extend(diff_latent_codes[:, -1, :].tolist())
+            diff_generated_sequences.extend(diff_seqs.tolist())
         plots(sequences=np.array(diff_generated_sequences),
-              latent_codes=np.array(denoised_latent_codes),
+              labels=keras.ops.squeeze(attr_conditioning_labels),
               output_dir=output_dir / "diffusion",
               attribute=attribute,
               args=args)
 
 
-def plots(sequences, latent_codes, output_dir: Path, attribute: str, args, sequences_attrs=None):
+def plots(sequences, labels, output_dir: Path, attribute: str, args, sequences_attrs=None):
     output_dir.mkdir(parents=True, exist_ok=True)
     # compute sequences attributes
     if not sequences_attrs:
@@ -69,17 +72,16 @@ def plots(sequences, latent_codes, output_dir: Path, attribute: str, args, seque
     # plot generated sequences attributes histogram
     filename = f'{str(output_dir)}/histogram_generated_{attribute}_{args.histogram_bins}_bins.png'
     logging.info(f"Plotting generated histogram with {args.histogram_bins} bins for attribute {attribute}...")
-    plt.hist(sequences_attrs, bins=args.histogram_bins, density=True, stacked=True, color='blue', alpha=0.7)
+    plt.hist(sequences_attrs, bins=args.histogram_bins, density=True, stacked=True, color='C0', alpha=0.7)
     plt.grid(linestyle=':')
+    plt.xlabel(r'$a$')
     plt.savefig(filename, format='png', dpi=300)
     plt.close()
     # compute Pearson coefficient and plot graph with the best linear fitting model
-    reg_dim_data = latent_codes[:, args.regularized_dimension]
-    correlation_matrix = np.corrcoef(reg_dim_data, sequences_attrs)
+    correlation_matrix = np.corrcoef(labels, sequences_attrs)
     pearson_coefficient = correlation_matrix[0, 1]
     slope, intercept = plot_reg_dim_vs_attribute(output_path=str(output_dir / 'reg_dim_vs_attribute.png'),
-                                                 reg_dim_data=reg_dim_data,
-                                                 reg_dim_idx=args.regularized_dimension,
+                                                 labels=labels,
                                                  attribute_data=sequences_attrs)
     # convert generated sequences to MIDI and save to disk
     representation = PitchSequenceRepresentation(args.sequence_length)
@@ -87,8 +89,7 @@ def plots(sequences, latent_codes, output_dir: Path, attribute: str, args, seque
     random_idxes = [random.randint(0, args.dataset_cardinality - 1) for _ in range(seq_to_save_count)]
     for idx, generated_sequence in enumerate(keras.ops.take(sequences, indices=random_idxes, axis=0)):
         generated_note_sequence = representation.to_canonical_format(generated_sequence, attributes=None)
-        filename = (f"midi/{output_dir.stem}/{attribute}_"
-                    f"{latent_codes[random_idxes[idx], args.regularized_dimension]:.2f}.midi")
+        filename = f"midi/{output_dir.stem}/{attribute}_{sequences_attrs[random_idxes[idx]]}.midi"
         midi_io.note_sequence_to_midi_file(
             note_sequence=generated_note_sequence,
             output_file=Path(args.output_path) / attribute / Path(args.model_path).stem / filename
@@ -97,14 +98,17 @@ def plots(sequences, latent_codes, output_dir: Path, attribute: str, args, seque
     logging.info(f"Pearson coefficient {pearson_coefficient:.2f}.")
 
 
+@mpl.rc_context({'text.usetex': True, 'font.family': 'serif', 'font.size': 20, 'font.serif': 'Computer Modern Roman',
+                 'lines.linewidth': 1.5})
 def plot_reg_dim_vs_attribute(output_path: str,
-                              reg_dim_data,
-                              reg_dim_idx,
+                              labels,
                               attribute_data):
-    slope, intercept = np.polyfit(reg_dim_data, attribute_data, 1)
-    plt.scatter(reg_dim_data, attribute_data, color='blue', s=5)
-    plt.plot(reg_dim_data, slope * reg_dim_data + intercept, color='red')
-    plt.xlabel(f'$z_{reg_dim_idx}$')
+    slope, intercept = np.polyfit(labels, attribute_data, 1)
+    plt.scatter(labels, attribute_data, color='C0', s=5, alpha=0.35, edgecolors='none')
+    plt.plot(labels, slope * labels + intercept, color='#fd5656')
+    plt.xlabel(r'$a_l$')
+    plt.ylabel(r'$a_g$')
+    plt.tight_layout()
     plt.savefig(output_path, format='png', dpi=300)
     plt.close()
     return slope, intercept
@@ -112,9 +116,6 @@ def plot_reg_dim_vs_attribute(output_path: str,
 
 if __name__ == '__main__':
     parser = utilities.get_arg_parser("")
-    parser.add_argument('--control-reg-dim', action="store_true",
-                        help='Control the regularized latent dimension of the sampled latent codes using the min and '
-                             'max values provided in `--latent-min-val` and `--latent-max-val.`')
     parser.add_argument('--sampling-steps', help='Number of steps for diffusion sampling.', default=100, required=False,
                         type=int)
     parser.add_argument('--num-midi-to-save', help='Number of generated sequences to save as MIDI file. '
@@ -136,5 +137,4 @@ if __name__ == '__main__':
     handler = logging.StreamHandler()
     handler.addFilter(InfoFilter())  # Apply the filter to allow only INFO messages
     logger.addHandler(handler)
-
     test_model_generation(vargs)

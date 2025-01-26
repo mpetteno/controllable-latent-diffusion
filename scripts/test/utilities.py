@@ -75,8 +75,6 @@ def get_arg_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument('--dataset-cardinality', help='Cardinality of the test dataset.', required=True, type=int)
     parser.add_argument('--sequence-length', help='Length of the sequences in the dataset.', required=True, type=int)
     parser.add_argument('--attributes', nargs='+', help='Attributes to evaluate.', required=True)
-    parser.add_argument('--regularized-dimension', help='Index of the latent code regularized dimension.',
-                        required=False, type=int, default=0)
     parser.add_argument('--output-path', help='Path where the histograms and generated MIDI files will be saved.',
                         required=True)
     parser.add_argument('--batch-size', help='Batch size.', required=False, default=64, type=int,
