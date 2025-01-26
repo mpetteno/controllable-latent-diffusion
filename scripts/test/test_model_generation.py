@@ -80,7 +80,7 @@ def plots(sequences, labels, output_dir: Path, attribute: str, args, sequences_a
     # compute Pearson coefficient and plot graph with the best linear fitting model
     correlation_matrix = np.corrcoef(labels, sequences_attrs)
     pearson_coefficient = correlation_matrix[0, 1]
-    slope, intercept = plot_reg_dim_vs_attribute(output_path=str(output_dir / 'reg_dim_vs_attribute.png'),
+    slope, intercept = plot_reg_dim_vs_attribute(output_path=str(output_dir / 'labels_vs_attribute.png'),
                                                  labels=labels,
                                                  attribute_data=sequences_attrs)
     # convert generated sequences to MIDI and save to disk
