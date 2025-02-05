@@ -210,7 +210,14 @@ def get_latent_diffusion_model(model_config_path: str) -> LatentDiffusion:
         eta=diffusion_config["eta"],
         noise_schedule_type=diffusion_config["noise_scheduler"]["type"],
         noise_schedule_start=diffusion_config["noise_scheduler"]["start"],
-        noise_schedule_end=diffusion_config["noise_scheduler"]["end"]
+        noise_schedule_end=diffusion_config["noise_scheduler"]["end"],
+        cfg_uncond_probability_scheduler=get_scheduler(
+            schedule_type=diffusion_config["cfg_uncond_probability_scheduler"]["type"],
+            schedule_config={
+                **diffusion_config["cfg_uncond_probability_scheduler"]["config"]
+            }
+        ),
+        cfg_weight=diffusion_config["cfg_weight"]
     )
     return LatentDiffusion(vae=latent_diffusion_config["vae_weights_path"], diffusion=diffusion_model)
 

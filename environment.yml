@@ -6,6 +6,7 @@ dependencies:
   - python>=3.9,<3.12
   - pip
   - numpy==1.26.4
+  - cmake
   - pip:
       - resolv-pipelines @ git+ssh://git@github.com/resolv-libs/resolv-pipelines.git@main
       - git+ssh://git@github.com/resolv-libs/resolv-ml.git@main
