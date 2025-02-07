@@ -186,19 +186,27 @@ def get_latent_diffusion_model(model_config_path: str) -> LatentDiffusion:
     with open(latent_diffusion_config["diffusion_config_path"]) as file:
         diffusion_config = json.load(file)
         denoiser_config = diffusion_config["dense_denoiser"]
-        pos_emb_config = denoiser_config["positional_embedding"]
+        timestep_enc_config = denoiser_config["timestep_encoder"]
+        labels_enc_config = denoiser_config["labels_encoder"]
 
     diffusion_model = DDIM(
         z_shape=(vae_config["z_size"],),
         denoiser=DenseDenoiser(
             units=denoiser_config["units"],
             num_layers=denoiser_config["num_layers"],
-            positional_encoding_layer=SinusoidalPositionalEncoding(
-                embedding_dim=pos_emb_config["embedding_dim"],
-                max_seq_length=pos_emb_config["max_seq_length"],
-                frequency_base=pos_emb_config["frequency_base"],
-                frequency_scaling=pos_emb_config["frequency_scaling"],
-                lookup_table=pos_emb_config["lookup_table"]
+            timestep_encoding_layer=SinusoidalPositionalEncoding(
+                embedding_dim=timestep_enc_config["embedding_dim"],
+                max_seq_length=timestep_enc_config["max_seq_length"],
+                frequency_base=timestep_enc_config["frequency_base"],
+                frequency_scaling=timestep_enc_config["frequency_scaling"],
+                lookup_table=timestep_enc_config["lookup_table"]
+            ),
+            labels_encoding_layer=SinusoidalPositionalEncoding(
+                embedding_dim=labels_enc_config["embedding_dim"],
+                max_seq_length=labels_enc_config["max_seq_length"],
+                frequency_base=labels_enc_config["frequency_base"],
+                frequency_scaling=labels_enc_config["frequency_scaling"],
+                lookup_table=labels_enc_config["lookup_table"]
             )
         ),
         noise_fn=get_ar_noise,
