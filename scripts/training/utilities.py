@@ -209,7 +209,7 @@ def get_latent_diffusion_model(model_config_path: str) -> LatentDiffusion:
                 lookup_table=labels_enc_config["lookup_table"]
             )
         ),
-        noise_fn=get_ar_noise,
+        # noise_fn=get_ar_noise,
         timesteps=diffusion_config["timesteps"],
         sampling_timesteps=diffusion_config["sampling_timesteps"],
         timesteps_scheduler_type=diffusion_config["timesteps_scheduler_type"],
