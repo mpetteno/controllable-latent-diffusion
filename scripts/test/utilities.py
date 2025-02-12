@@ -34,7 +34,7 @@ def load_flat_dataset(dataset_path: str,
                            batch_size=batch_size,
                            shift=shift,
                            parse_sequence_feature=parse_sequence_feature)
-    return np.concatenate([batch.numpy() for batch in dataset], axis=0)
+    return np.concatenate([batch[0][0].numpy() for batch in dataset], axis=0)
 
 
 def load_dataset(dataset_path: str,
