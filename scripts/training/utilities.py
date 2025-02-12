@@ -10,6 +10,7 @@ import keras
 import tensorflow as tf
 from resolv_ml.models.dlvm.diffusion.ddim import DDIM
 from resolv_ml.models.dlvm.misc.latent_diffusion import LatentDiffusion
+from resolv_ml.models.dlvm.normalizing_flows.base import NormalizingFlow
 from resolv_ml.models.dlvm.vae.ar_vae import AttributeRegularizedVAE
 from resolv_ml.models.dlvm.vae.base import VAE
 from resolv_ml.models.dlvm.vae.vanilla_vae import StandardVAE
@@ -18,10 +19,12 @@ from resolv_ml.models.nn.embeddings import SinusoidalPositionalEncoding
 from resolv_ml.models.seq2seq.rnn.decoders import HierarchicalRNNDecoder, RNNAutoregressiveDecoder
 from resolv_ml.models.seq2seq.rnn.encoders import BidirectionalRNNEncoder
 from resolv_ml.training.trainer import Trainer
+from resolv_ml.utilities.bijectors import BoxCox, BatchNormalization
 from resolv_ml.utilities.regularizers.attribute import AttributeRegularizer
 from resolv_ml.utilities.schedulers import get_scheduler
 from resolv_pipelines.data.loaders import TFRecordLoader
 from resolv_pipelines.data.representation.mir import PitchSequenceRepresentation
+from tensorflow_probability import distributions as tfd
 
 
 def check_tf_gpu_availability():
@@ -165,7 +168,56 @@ def get_vae_model(model_config_path: str,
         )
 
 
-def get_latent_diffusion_model(model_config_path: str) -> LatentDiffusion:
+def get_latent_diffusion_model(model_config_path: str, power: float = 1.0, shift: float = 0.0) -> LatentDiffusion:
+
+    @keras.saving.register_keras_serializable(package="DiffusionPaper", name="LabelsEncoder")
+    class LabelsEncoder(keras.Layer):
+
+        def __init__(self,
+                     nf_layer: keras.layers.Layer,
+                     encoder_layer: keras.layers.Layer,
+                     name: str = "LabelsEncoder"):
+            super(LabelsEncoder, self).__init__(name=name)
+            self._normalizing_flow = nf_layer
+            self._encoder = encoder_layer
+
+        def compute_output_shape(self, input_shape):
+            return self._encoder.compute_output_shape(input_shape)
+
+        def build(self, input_shape):
+            self._normalizing_flow.build(input_shape)
+            self._encoder.build(input_shape)
+
+        def call(self, inputs, training: bool = False):
+            batch_size = inputs.shape[0]
+            transformed_attributes = self._normalizing_flow(
+                inputs,
+                base_distribution=tfd.MultivariateNormalDiag(
+                    loc=tf.zeros_like((batch_size,), dtype=tf.float32),
+                    scale_diag=tf.ones_like((batch_size,), dtype=tf.float32)
+                ),
+                inverse=True,
+                training=training
+            )
+            return self._encoder(transformed_attributes)
+
+        def get_config(self):
+            base_config = super().get_config()
+            config = {
+                "normalizing_flow": keras.saving.serialize_keras_object(self._normalizing_flow),
+                "encoder": keras.saving.serialize_keras_object(self._encoder)
+            }
+            return {**base_config, **config}
+
+        @classmethod
+        def from_config(cls, config, custom_objects=None):
+            nf_layer = keras.saving.deserialize_keras_object(config.pop("normalizing_flow"))
+            encoder_layer = keras.saving.deserialize_keras_object(config.pop("encoder"))
+            return cls(
+                nf_layer=nf_layer,
+                encoder_layer=encoder_layer,
+                **config
+            )
 
     def get_ar_noise(diff_model, batch_size: int, x=None, labels=None):
         noise = diff_model.get_gaussian_noise(batch_size, x)
@@ -201,12 +253,24 @@ def get_latent_diffusion_model(model_config_path: str) -> LatentDiffusion:
                 frequency_scaling=timestep_enc_config["frequency_scaling"],
                 lookup_table=timestep_enc_config["lookup_table"]
             ),
-            labels_encoding_layer=SinusoidalPositionalEncoding(
-                embedding_dim=labels_enc_config["embedding_dim"],
-                max_seq_length=labels_enc_config["max_seq_length"],
-                frequency_base=labels_enc_config["frequency_base"],
-                frequency_scaling=labels_enc_config["frequency_scaling"],
-                lookup_table=labels_enc_config["lookup_table"]
+            labels_encoding_layer=LabelsEncoder(
+                encoder_layer=SinusoidalPositionalEncoding(
+                    embedding_dim=labels_enc_config["embedding_dim"],
+                    max_seq_length=labels_enc_config["max_seq_length"],
+                    frequency_base=labels_enc_config["frequency_base"],
+                    frequency_scaling=labels_enc_config["frequency_scaling"],
+                    lookup_table=labels_enc_config["lookup_table"]
+                ),
+                nf_layer=NormalizingFlow(
+                    bijectors=[
+                        BoxCox(power_init_value=power,
+                               shift_init_value=shift,
+                               power_trainable=False,
+                               shift_trainable=False),
+                        BatchNormalization(scale=False, center=False)
+                    ],
+                    add_loss=False
+                ),
             )
         ),
         # noise_fn=get_ar_noise,

@@ -20,6 +20,8 @@ from scripts.training import utilities
 if __name__ == '__main__':
     arg_parser = utilities.get_arg_parser(description="Train latent diffusion model.")
     arg_parser.add_argument('--attribute', help='Attribute to regularize.', required=True)
+    arg_parser.add_argument('--power', help='BoxCox power parameter.', required=False, default=1.0, type=float)
+    arg_parser.add_argument('--shift', help='BoxCox shift parameter.', required=False, default=0.0, type=float)
     args = arg_parser.parse_args()
 
     logging.getLogger().setLevel(args.logging_level)
@@ -32,7 +34,11 @@ if __name__ == '__main__':
             trainer_config_path=args.trainer_config_path,
             attribute=args.attribute
         )
-        latent_diffusion = utilities.get_latent_diffusion_model(model_config_path=args.model_config_path)
+        latent_diffusion = utilities.get_latent_diffusion_model(
+            model_config_path=args.model_config_path,
+            power=args.power,
+            shift=args.shift if args.shift else 1e-5
+        )
         latent_diffusion.build(input_shape)
         trainer = utilities.get_latent_diffusion_trainer(
             model=latent_diffusion, trainer_config_path=args.trainer_config_path
