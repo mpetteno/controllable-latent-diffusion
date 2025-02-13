@@ -24,7 +24,6 @@ from resolv_ml.utilities.regularizers.attribute import AttributeRegularizer
 from resolv_ml.utilities.schedulers import get_scheduler
 from resolv_pipelines.data.loaders import TFRecordLoader
 from resolv_pipelines.data.representation.mir import PitchSequenceRepresentation
-from tensorflow_probability import distributions as tfd
 
 
 def check_tf_gpu_availability():
