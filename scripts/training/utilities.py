@@ -180,6 +180,7 @@ def get_latent_diffusion_model(model_config_path: str, power: float = 1.0, shift
             super(LabelsEncoder, self).__init__(name=name)
             self._normalizing_flow = nf_layer
             self._encoder = encoder_layer
+            self._normalizing_flow._trainable = False
 
         def compute_output_shape(self, input_shape):
             return self._encoder.compute_output_shape(input_shape)
@@ -189,16 +190,7 @@ def get_latent_diffusion_model(model_config_path: str, power: float = 1.0, shift
             self._encoder.build(input_shape)
 
         def call(self, inputs, training: bool = False):
-            batch_size = inputs.shape[0]
-            transformed_attributes = self._normalizing_flow(
-                inputs,
-                base_distribution=tfd.MultivariateNormalDiag(
-                    loc=tf.zeros_like((batch_size,), dtype=tf.float32),
-                    scale_diag=tf.ones_like((batch_size,), dtype=tf.float32)
-                ),
-                inverse=True,
-                training=training
-            )
+            transformed_attributes = self._normalizing_flow(inputs, inverse=True)
             return self._encoder(transformed_attributes)
 
         def get_config(self):
