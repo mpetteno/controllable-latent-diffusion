@@ -19,11 +19,56 @@ from resolv_ml.models.nn.embeddings import SinusoidalPositionalEncoding
 from resolv_ml.models.seq2seq.rnn.decoders import HierarchicalRNNDecoder, RNNAutoregressiveDecoder
 from resolv_ml.models.seq2seq.rnn.encoders import BidirectionalRNNEncoder
 from resolv_ml.training.trainer import Trainer
-from resolv_ml.utilities.bijectors import BoxCox, BatchNormalization
+from resolv_ml.utilities.bijectors import BoxCox
 from resolv_ml.utilities.regularizers.attribute import AttributeRegularizer
 from resolv_ml.utilities.schedulers import get_scheduler
 from resolv_pipelines.data.loaders import TFRecordLoader
 from resolv_pipelines.data.representation.mir import PitchSequenceRepresentation
+
+
+@keras.saving.register_keras_serializable(package="DiffusionPaper", name="LabelsEncoder")
+class LabelsEncoder(keras.Layer):
+
+    def __init__(self,
+                 nf_layer: keras.layers.Layer,
+                 encoder_layer: keras.layers.Layer,
+                 name: str = "LabelsEncoder",
+                 **kwargs):
+        super(LabelsEncoder, self).__init__(name=name, **kwargs)
+        self._normalizing_flow = nf_layer
+        self._encoder = encoder_layer
+        self._normalizing_flow._trainable = False
+        self._normalizing_flow._add_loss = False
+
+    def compute_output_shape(self, input_shape):
+        return self._encoder.compute_output_shape(input_shape)
+
+    def build(self, input_shape):
+        self._normalizing_flow.build(input_shape)
+        self._encoder.build(input_shape)
+
+    def call(self, inputs, training: bool = False):
+        transformed_attributes = self._normalizing_flow(inputs, inverse=True)
+        # transformed_attributes = keras.ops.log(inputs + 1)
+        return self._encoder(transformed_attributes)
+
+    def get_config(self):
+        base_config = super().get_config()
+        config = {
+            "normalizing_flow": keras.saving.serialize_keras_object(self._normalizing_flow),
+            "encoder": keras.saving.serialize_keras_object(self._encoder)
+        }
+        return {**base_config, **config}
+
+    @classmethod
+    def from_config(cls, config, custom_objects=None):
+        nf_layer = keras.saving.deserialize_keras_object(config.pop("normalizing_flow"))
+        encoder_layer = keras.saving.deserialize_keras_object(config.pop("encoder"))
+        return cls(
+            nf_layer=nf_layer,
+            encoder_layer=encoder_layer,
+            **config
+        )
 
 
 def check_tf_gpu_availability():
@@ -169,47 +214,6 @@ def get_vae_model(model_config_path: str,
 
 def get_latent_diffusion_model(model_config_path: str, power: float = 1.0, shift: float = 0.0) -> LatentDiffusion:
 
-    @keras.saving.register_keras_serializable(package="DiffusionPaper", name="LabelsEncoder")
-    class LabelsEncoder(keras.Layer):
-
-        def __init__(self,
-                     nf_layer: keras.layers.Layer,
-                     encoder_layer: keras.layers.Layer,
-                     name: str = "LabelsEncoder"):
-            super(LabelsEncoder, self).__init__(name=name)
-            self._normalizing_flow = nf_layer
-            self._encoder = encoder_layer
-            self._normalizing_flow._trainable = False
-
-        def compute_output_shape(self, input_shape):
-            return self._encoder.compute_output_shape(input_shape)
-
-        def build(self, input_shape):
-            self._normalizing_flow.build(input_shape)
-            self._encoder.build(input_shape)
-
-        def call(self, inputs, training: bool = False):
-            transformed_attributes = self._normalizing_flow(inputs, inverse=True)
-            return self._encoder(transformed_attributes)
-
-        def get_config(self):
-            base_config = super().get_config()
-            config = {
-                "normalizing_flow": keras.saving.serialize_keras_object(self._normalizing_flow),
-                "encoder": keras.saving.serialize_keras_object(self._encoder)
-            }
-            return {**base_config, **config}
-
-        @classmethod
-        def from_config(cls, config, custom_objects=None):
-            nf_layer = keras.saving.deserialize_keras_object(config.pop("normalizing_flow"))
-            encoder_layer = keras.saving.deserialize_keras_object(config.pop("encoder"))
-            return cls(
-                nf_layer=nf_layer,
-                encoder_layer=encoder_layer,
-                **config
-            )
-
     def get_ar_noise(diff_model, batch_size: int, x=None, labels=None):
         noise = diff_model.get_gaussian_noise(batch_size, x)
         if keras.ops.is_tensor(labels):
@@ -254,15 +258,23 @@ def get_latent_diffusion_model(model_config_path: str, power: float = 1.0, shift
                 ),
                 nf_layer=NormalizingFlow(
                     bijectors=[
-                        BoxCox(power_init_value=power,
-                               shift_init_value=shift,
-                               power_trainable=False,
-                               shift_trainable=False),
-                        BatchNormalization(scale=False, center=False)
+                        BoxCox(
+                            power_init_value=power,
+                            shift_init_value=shift,
+                            power_trainable=False,
+                            shift_trainable=False
+                        )
                     ],
                     add_loss=False
                 ),
             )
+            # labels_encoding_layer=SinusoidalPositionalEncoding(
+            #     embedding_dim=labels_enc_config["embedding_dim"],
+            #     max_seq_length=labels_enc_config["max_seq_length"],
+            #     frequency_base=labels_enc_config["frequency_base"],
+            #     frequency_scaling=labels_enc_config["frequency_scaling"],
+            #     lookup_table=labels_enc_config["lookup_table"]
+            # )
         ),
         # noise_fn=get_ar_noise,
         timesteps=diffusion_config["timesteps"],

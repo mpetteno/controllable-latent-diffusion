@@ -34,7 +34,10 @@ def load_flat_dataset(dataset_path: str,
                            batch_size=batch_size,
                            shift=shift,
                            parse_sequence_feature=parse_sequence_feature)
-    return np.concatenate([batch[0][0].numpy() for batch in dataset], axis=0)
+    if parse_sequence_feature:
+        return np.concatenate([batch[0][0].numpy() for batch in dataset], axis=0)
+    else:
+        return np.concatenate([batch.numpy() for batch in dataset], axis=0)
 
 
 def load_dataset(dataset_path: str,
@@ -69,16 +72,15 @@ def load_dataset(dataset_path: str,
 
 def get_arg_parser(description: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument('--model-path', required=True, help='Path to the .keras model checkpoint.')
     parser.add_argument('--test-dataset-path', required=True,
                         help='Path to the dataset containing the test SequenceExample.')
-    parser.add_argument('--dataset-cardinality', help='Cardinality of the test dataset.', required=True, type=int)
-    parser.add_argument('--sequence-length', help='Length of the sequences in the dataset.', required=True, type=int)
     parser.add_argument('--attributes', nargs='+', help='Attributes to evaluate.', required=True)
     parser.add_argument('--output-path', help='Path where the histograms and generated MIDI files will be saved.',
                         required=True)
+    parser.add_argument('--sequence-length', help='Length of the sequences in the dataset.', required=True, type=int)
     parser.add_argument('--batch-size', help='Batch size.', required=False, default=64, type=int,
                         choices=[32, 64, 128, 256, 512])
+    parser.add_argument('--histogram-bins', help='Number of bins for the histogram.', default=[120], required=False)
     parser.add_argument('--seed', help='Seed for random initializers.', required=False, type=int)
     parser.add_argument('--logging-level', help='Set the logging level.', default="INFO", required=False,
                         choices=["CRITICAL", "ERROR", "WARNING", "INFO"])
