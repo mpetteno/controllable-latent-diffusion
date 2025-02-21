@@ -1,15 +1,14 @@
 import logging
 import os
-import sys
 from pathlib import Path
 from typing import List
 
 import keras
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy
 import tensorflow as tf
+
 import utilities
 
 
@@ -17,7 +16,7 @@ def test_distributions(args):
     for attribute in args.attributes:
         output_dir = Path(args.output_path) / attribute
         output_dir.mkdir(parents=True, exist_ok=True)
-        set_log_handler(output_dir=output_dir, log_level=getattr(logging, vargs.logging_level))
+        utilities.set_log_handler(output_dir=output_dir, log_level=getattr(logging, vargs.logging_level))
         input_sequences_attributes = utilities.load_flat_dataset(dataset_path=args.test_dataset_path,
                                                                  sequence_length=args.sequence_length,
                                                                  attribute=attribute,
@@ -42,8 +41,6 @@ def test_distributions(args):
         )
 
 
-@mpl.rc_context({'text.usetex': True, 'font.family': 'serif', 'font.size': 20, 'font.serif': 'Computer Modern Roman',
-                 'lines.linewidth': 1.5})
 def plot_distributions(pt_data,
                        original_data,
                        output_path: Path,
@@ -57,46 +54,28 @@ def plot_distributions(pt_data,
     for n_bins in histogram_bins:
         filename = (f'{str(histograms_output_path)}/histogram_{attribute}_power_{power:.2f}_shift_{shift:.3f}'
                     f'_bins_{n_bins}.png')
-        # Create subplots
-        fig, axes = plt.subplots(1, 2, sharey=True, figsize=(5, 5))
         # Original distribution histogram
         counts, bins = np.histogram(original_data, bins=n_bins)
         weights = (counts / np.max(counts)) * 0.45
-        axes[0].hist(bins[:-1], bins=n_bins, weights=weights, color='C1')
-        axes[0].set_xlabel('$a$')
-        axes[0].set_axisbelow(True)
-        axes[0].yaxis.grid(linestyle=':')
-        if x_lim >= 0:
-            axes[0].set_xlim(right=x_lim)
-        # Power transform histogram
-        counts, bins = np.histogram(pt_data, bins=n_bins)
-        weights = (counts / np.max(counts)) * 0.45
-        axes[1].hist(bins[:-1], bins=n_bins, weights=weights, color='C0')
-        axes[1].set_xlabel('$T_\lambda(a)$')
-        axes[1].set_axisbelow(True)
-        axes[1].yaxis.grid(linestyle=':')
-        plt.tight_layout()
-        plt.savefig(filename, format='png', dpi=300)
-        plt.close()
-
-
-def set_log_handler(output_dir, log_level):
-    # Create logger
-    logger = logging.getLogger()
-    logger.setLevel(log_level)
-    # Create file handler
-    file_handler = logging.FileHandler(output_dir / 'log.txt')
-    file_handler.setLevel(log_level)
-    # Create console handler (stdout)
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(log_level)
-    # Use the default logging format
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    file_handler.setFormatter(formatter)
-    console_handler.setFormatter(formatter)
-    # Add handlers to the logger
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
+        with plt.rc_context(utilities.get_matplotlib_context()):
+            # Create subplots
+            fig, axes = plt.subplots(1, 2, sharey=True, figsize=(5, 5))
+            axes[0].hist(bins[:-1], bins=n_bins, weights=weights, color='C1')
+            axes[0].set_xlabel('$a$')
+            axes[0].set_axisbelow(True)
+            axes[0].yaxis.grid(linestyle=':')
+            if x_lim >= 0:
+                axes[0].set_xlim(right=x_lim)
+            # Power transform histogram
+            counts, bins = np.histogram(pt_data, bins=n_bins)
+            weights = (counts / np.max(counts)) * 0.45
+            axes[1].hist(bins[:-1], bins=n_bins, weights=weights, color='C0')
+            axes[1].set_xlabel('$T_\lambda(a)$')
+            axes[1].set_axisbelow(True)
+            axes[1].yaxis.grid(linestyle=':')
+            plt.tight_layout()
+            plt.savefig(filename, format='png', dpi=300)
+            plt.close()
 
 
 if __name__ == '__main__':

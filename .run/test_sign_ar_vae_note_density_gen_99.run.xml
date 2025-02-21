@@ -1,0 +1,25 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="test_sign_ar_vae_note_density_gen_99" type="PythonConfigurationType" factoryName="Python" folderName="Sign AR-VAE - Test Quantile 99" editBeforeRun="true">
+    <module name="controllable-latent-diffusion" />
+    <option name="ENV_FILES" value="" />
+    <option name="INTERPRETER_OPTIONS" value="" />
+    <option name="PARENT_ENVS" value="true" />
+    <envs>
+      <env name="PYTHONUNBUFFERED" value="1" />
+    </envs>
+    <option name="SDK_HOME" value="" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <option name="IS_MODULE_SDK" value="true" />
+    <option name="ADD_CONTENT_ROOTS" value="true" />
+    <option name="ADD_SOURCE_ROOTS" value="true" />
+    <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+    <option name="SCRIPT_NAME" value="$PROJECT_DIR$/scripts/test/test_latent_diffusion_generation.py" />
+    <option name="PARAMETERS" value="--model-path=&quot;./output/models/sign-ar-vae/note-density/gamma-1.0/checkpoints/epoch_40-val_loss_0.3218.keras&quot; --test-dataset-path=&quot;./output/datasets/representation/4bars_melodies_distinct/lakh_midi-v1.0.0-full/midi/pitchseq/test/*.tfrecord&quot; --output-path=&quot;./output/tests/models/sign-ar-vae/quantile-99&quot; --batch-size=512 --dataset-cardinality=22265 --sampling-steps=100 --sequence-length=64 --attributes=&quot;note_density&quot; --min-attr=0.0 --max-attr=1.0 --batch-size=512 --seed=42 --logging-level=&quot;INFO&quot;" />
+    <option name="SHOW_COMMAND_LINE" value="false" />
+    <option name="EMULATE_TERMINAL" value="false" />
+    <option name="MODULE_MODE" value="false" />
+    <option name="REDIRECT_INPUT" value="false" />
+    <option name="INPUT_FILE" value="" />
+    <method v="2" />
+  </configuration>
+</component>
