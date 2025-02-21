@@ -23,11 +23,11 @@ def test_model_generation(args):
         model = keras.saving.load_model(args.model_path, compile=False)
         model.compile(run_eagerly=True)
         model.trainable = False
-        input_sequences_attributes = utilities.load_flat_dataset(dataset_path=args.test_dataset_path,
-                                                                 sequence_length=args.sequence_length,
-                                                                 attribute=attribute,
-                                                                 batch_size=args.batch_size,
-                                                                 parse_sequence_feature=False)
+        input_sequences, input_sequences_attributes = utilities.load_flat_dataset(dataset_path=args.test_dataset_path,
+                                                                                  sequence_length=args.sequence_length,
+                                                                                  attribute=attribute,
+                                                                                  batch_size=args.batch_size,
+                                                                                  parse_sequence_feature=True)
         steps = args.dataset_cardinality // args.batch_size
         dataset_min_attr_val = args.min_attr if args.min_attr > 0 else np.min(input_sequences_attributes)
         dataset_max_attr_val = args.max_attr if args.max_attr > 0 else np.max(input_sequences_attributes)
@@ -36,6 +36,22 @@ def test_model_generation(args):
                 start=dataset_min_attr_val, stop=dataset_max_attr_val, num=args.batch_size * steps
             ), axis=-1
         )
+        # ------------------------------------------------------------------------------------------------------------
+        logging.info("Converting input sequences to MIDI and save to disk...")
+        num_sequences = input_sequences.shape[0]
+        representation = PitchSequenceRepresentation(args.sequence_length)
+        sequences_to_save, attr_idxes = input_sequences, np.arange(num_sequences)
+        if 0 < args.num_midi_to_save < num_sequences:
+            attr_idxes = [random.randint(0, num_sequences - 1) for _ in range(args.num_midi_to_save)]
+            sequences_to_save = keras.ops.take(input_sequences, indices=attr_idxes, axis=0)
+        for idx, input_sequence in enumerate(sequences_to_save):
+            input_note_sequence = representation.to_canonical_format(input_sequence.squeeze(), attributes=None)
+            filename = f"midi/inputs/example_{attribute}_{input_sequences_attributes[attr_idxes[idx]][0]:5f}_{idx}.midi"
+            midi_io.note_sequence_to_midi_file(
+                note_sequence=input_note_sequence,
+                output_file=Path(args.output_path) / attribute / Path(args.model_path).stem / filename
+            )
+        # -------------------------------------------------------------------------------------
         if isinstance(model, LatentDiffusion):
             logging.info("----------------------------- TEST FROZEN VAE -----------------------------")
             latent_codes = model._vae.get_latent_codes(keras.ops.convert_to_tensor(args.batch_size * steps))
@@ -102,10 +118,10 @@ def test_model_generation(args):
                 normalizing_flow._bijectors[1]._training = False
                 normalizing_flow._add_loss = False
                 z_lin_conditioning_labels = normalizing_flow(
-                    inputs=z_lin_conditioning_labels,  inverse=True, training=False
+                    inputs=z_lin_conditioning_labels, inverse=True, training=False
                 ).numpy()
                 z_data_conditioning_labels = normalizing_flow(
-                    inputs=z_data_conditioning_labels,  inverse=True, training=False
+                    inputs=z_data_conditioning_labels, inverse=True, training=False
                 ).numpy()
             decoder_inputs = keras.ops.convert_to_tensor(args.sequence_length, dtype="int32")
             logging.info("------------------------------------ LINSPACE ------------------------------------")
@@ -132,6 +148,7 @@ def plots(sequences, labels, output_dir: Path, attribute: str, args):
     sequences_attrs, hold_note_start_seq_count = utilities.compute_sequences_attributes(
         sequences, attribute, args.sequence_length
     )
+    labels = labels.numpy()
     # ------------------------------------------------------------------------------------------------------------
     logging.info("Plot generated sequences attributes histogram...")
     filename = f'{str(output_dir)}/histogram_generated_{attribute}_{args.histogram_bins[0]}_bins.png'
@@ -164,7 +181,8 @@ def plots(sequences, labels, output_dir: Path, attribute: str, args):
         sequences_to_save = keras.ops.take(sequences, indices=attr_idxes, axis=0)
     for idx, generated_sequence in enumerate(sequences_to_save):
         generated_note_sequence = representation.to_canonical_format(generated_sequence, attributes=None)
-        filename = f"midi/{output_dir.stem}/{attribute}_{sequences_attrs[attr_idxes[idx]]}_{idx}.midi"
+        filename = (f"midi/gen/{output_dir.stem}/gen_{attribute}_cond_{labels[attr_idxes[idx]]:5f}"
+                    f"_seq_{sequences_attrs[attr_idxes[idx]]:5f}_{idx}.midi")
         midi_io.note_sequence_to_midi_file(
             note_sequence=generated_note_sequence,
             output_file=Path(args.output_path) / attribute / Path(args.model_path).stem / filename
@@ -193,7 +211,8 @@ if __name__ == '__main__':
     parser.add_argument('--sampling-steps', help='Number of steps for diffusion sampling.', default=100, required=False,
                         type=int)
     parser.add_argument('--num-midi-to-save', help='Number of generated sequences to save as MIDI file. The N '
-                        'sequences will be chosen randomly.', default=-1, required=False, type=int)
+                                                   'sequences will be chosen randomly.', default=-1, required=False,
+                        type=int)
     parser.add_argument('--min-attr', help='', required=False, default=-1.0, type=float)
     parser.add_argument('--max-attr', help='', required=False, default=-1.0, type=float)
     parser.add_argument('--regularized-dimension', help='Index of the latent code regularized dimension.',
