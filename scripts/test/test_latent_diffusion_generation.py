@@ -68,12 +68,6 @@ def test_model_generation(args):
             model._diffusion._sampling_timesteps = args.sampling_steps
             diff_linspace_generated_sequences = []
             diff_dataset_generated_sequences = []
-            # ------------------------------------ APPLY T(.) ------------------------------------
-            # normalizing_flow = model._diffusion._denoiser.labels_encoding_layer._normalizing_flow
-            # normalizing_flow._bijectors[1]._training = False
-            # attr_conditioning_labels = normalizing_flow(inputs=attr_conditioning_labels, inverse=True)
-            # attr_conditioning_labels = keras.ops.log(1 + attr_conditioning_labels)
-            # -------------------------------------------------------------------------------------
             for i in range(steps):
                 logging.info(f"Generating sequences with Diffusion for batch {i}/{steps}...")
                 batch_lin_attr_labels = attr_conditioning_labels[i * args.batch_size:(i + 1) * args.batch_size]
@@ -110,18 +104,6 @@ def test_model_generation(args):
                 ).numpy()
                 z_data_conditioning_labels = model._attribute_processing_layer(
                     z_data_conditioning_labels, training=False
-                ).numpy()
-            # Get normalizing flow if model uses PT regularization
-            normalizing_flow_ar_layer = model._regularizers.get("nf_ar", None)
-            if normalizing_flow_ar_layer:
-                normalizing_flow = normalizing_flow_ar_layer._normalizing_flow
-                normalizing_flow._bijectors[1]._training = False
-                normalizing_flow._add_loss = False
-                z_lin_conditioning_labels = normalizing_flow(
-                    inputs=z_lin_conditioning_labels, inverse=True, training=False
-                ).numpy()
-                z_data_conditioning_labels = normalizing_flow(
-                    inputs=z_data_conditioning_labels, inverse=True, training=False
                 ).numpy()
             decoder_inputs = keras.ops.convert_to_tensor(args.sequence_length, dtype="int32")
             logging.info("------------------------------------ LINSPACE ------------------------------------")

@@ -25,50 +25,7 @@ from resolv_ml.utilities.schedulers import get_scheduler
 from resolv_pipelines.data.loaders import TFRecordLoader
 from resolv_pipelines.data.representation.mir import PitchSequenceRepresentation
 
-
-@keras.saving.register_keras_serializable(package="DiffusionPaper", name="LabelsEncoder")
-class LabelsEncoder(keras.Layer):
-
-    def __init__(self,
-                 nf_layer: keras.layers.Layer,
-                 encoder_layer: keras.layers.Layer,
-                 name: str = "LabelsEncoder",
-                 **kwargs):
-        super(LabelsEncoder, self).__init__(name=name, **kwargs)
-        self._normalizing_flow = nf_layer
-        self._encoder = encoder_layer
-        self._normalizing_flow._trainable = False
-        self._normalizing_flow._add_loss = False
-
-    def compute_output_shape(self, input_shape):
-        return self._encoder.compute_output_shape(input_shape)
-
-    def build(self, input_shape):
-        self._normalizing_flow.build(input_shape)
-        self._encoder.build(input_shape)
-
-    def call(self, inputs, training: bool = False):
-        transformed_attributes = self._normalizing_flow(inputs, inverse=True)
-        # transformed_attributes = keras.ops.log(inputs + 1)
-        return self._encoder(transformed_attributes)
-
-    def get_config(self):
-        base_config = super().get_config()
-        config = {
-            "normalizing_flow": keras.saving.serialize_keras_object(self._normalizing_flow),
-            "encoder": keras.saving.serialize_keras_object(self._encoder)
-        }
-        return {**base_config, **config}
-
-    @classmethod
-    def from_config(cls, config, custom_objects=None):
-        nf_layer = keras.saving.deserialize_keras_object(config.pop("normalizing_flow"))
-        encoder_layer = keras.saving.deserialize_keras_object(config.pop("encoder"))
-        return cls(
-            nf_layer=nf_layer,
-            encoder_layer=encoder_layer,
-            **config
-        )
+# -------------------------------------- COMMON --------------------------------------
 
 
 def check_tf_gpu_availability():
@@ -111,6 +68,134 @@ def get_distributed_strategy(gpu_ids: List[int] = None, memory_growth: bool = Fa
         logging.info(f"Using OneDeviceStrategy on selected GPU: {selected_gpus_name[0]}")
         strategy = tf.distribute.OneDeviceStrategy(device=selected_gpus_name[0])
     return strategy
+
+
+def get_arg_parser(description: str) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument('--model-config-path', help='Path to the diffusion model\'s configuration file.',
+                        required=True)
+    parser.add_argument('--hierarchical-decoder', help='Use a hierarchical decoder.', action="store_true")
+    parser.add_argument('--trainer-config-path', help='Path to the trainer\'s configuration file.', required=True)
+    parser.add_argument('--train-dataset-config-path', help='Path to the train dataset\'s configuration file.',
+                        required=True)
+    parser.add_argument('--val-dataset-config-path', help='Path to the validation dataset\'s configuration file.',
+                        required=True)
+    parser.add_argument('--gpus', nargs="+", help='ID of GPUs to use for training.', required=False,
+                        default=[], type=int)
+    parser.add_argument('--gpu-memory-growth', help='Set memory growth for the selected GPUs.', action="store_true")
+    parser.add_argument('--logging-level', help='Set the logging level.', default="INFO", required=False,
+                        choices=["CRITICAL", "ERROR", "WARNING", "INFO"])
+    return parser
+
+
+# -------------------------------------- DATASETS --------------------------------------
+
+
+def load_datasets(train_dataset_config_path: str,
+                  val_dataset_config_path: str,
+                  trainer_config_path: str,
+                  attribute: str = None):
+    train_data, input_shape, train_length = load_pitch_seq_dataset(dataset_config_path=train_dataset_config_path,
+                                                                   trainer_config_path=trainer_config_path,
+                                                                   attribute=attribute,
+                                                                   training=True)
+    val_data, _, val_length = load_pitch_seq_dataset(dataset_config_path=val_dataset_config_path,
+                                                     trainer_config_path=trainer_config_path,
+                                                     attribute=attribute,
+                                                     training=False)
+    return (train_data, train_length), (val_data, val_length), input_shape
+
+
+def load_pitch_seq_dataset(dataset_config_path: str,
+                           trainer_config_path: str,
+                           attribute: str = None,
+                           training: bool = False) -> tf.data.TFRecordDataset:
+    def get_input_shape():
+        input_seq_shape = batch_size, sequence_length, sequence_features
+        aux_input_shape = (batch_size, 1)
+        return input_seq_shape, aux_input_shape
+
+    def map_fn(ctx, seq):
+        input_seq = tf.transpose(seq["pitch_seq"])
+        attributes = tf.expand_dims(ctx[attribute], axis=-1) if attribute \
+            else tf.zeros(shape=(batch_size, 1))
+        target = input_seq
+        return (input_seq, attributes), target
+
+    with open(dataset_config_path) as file:
+        dataset_config = json.load(file)
+
+    with open(trainer_config_path) as file:
+        fit_config = json.load(file)["fit"]
+
+    dataset_cardinality = dataset_config.pop("dataset_cardinality")
+    batch_size = fit_config["batch_size"]
+    total_steps = fit_config["total_steps"]
+    if training:
+        dataset_steps = dataset_cardinality // batch_size
+        dataset_repeat_count = total_steps / dataset_steps
+        dataset_repeat_count = None if dataset_repeat_count < 1 else math.ceil(dataset_repeat_count)
+    else:
+        dataset_repeat_count = total_steps // (fit_config['steps_per_epoch'] * fit_config['validation_freq'])
+
+    sequence_length = dataset_config.pop("sequence_length")
+    sequence_features = dataset_config.pop("sequence_features")
+    representation = PitchSequenceRepresentation(sequence_length=sequence_length)
+    tfrecord_loader = TFRecordLoader(
+        file_pattern=dataset_config.pop("dataset_path"),
+        parse_fn=functools.partial(
+            representation.parse_example,
+            parse_sequence_feature=True,
+            attributes_to_parse=[attribute] if attribute else None
+        ),
+        map_fn=map_fn,
+        batch_size=batch_size,
+        repeat_count=dataset_repeat_count,
+        shuffle_buffer_size=dataset_config.pop("shuffle_buffer_size") or dataset_cardinality,
+        **dataset_config
+    )
+    return tfrecord_loader.load_dataset(), get_input_shape(), dataset_cardinality
+
+
+# -------------------------------------- MODELS --------------------------------------
+
+
+@keras.saving.register_keras_serializable(package="DiffusionPaper", name="LabelsEncoder")
+class LabelsEncoder(keras.Layer):
+
+    def __init__(self,
+                 encoder_layer: keras.layers.Layer,
+                 name: str = "LabelsEncoder",
+                 **kwargs):
+        super(LabelsEncoder, self).__init__(name=name, **kwargs)
+        self._encoder = encoder_layer
+
+    def compute_output_shape(self, input_shape):
+        return self._encoder.compute_output_shape(input_shape)
+
+    def build(self, input_shape):
+        self._encoder.build(input_shape)
+
+    def call(self, inputs, training: bool = False):
+        # transformed_attributes = self._normalizing_flow(inputs, inverse=True)
+        # transformed_attributes = keras.ops.log(inputs + 1)
+        transformed_attributes = inputs
+        return self._encoder(transformed_attributes)
+
+    def get_config(self):
+        base_config = super().get_config()
+        config = {
+            "encoder": keras.saving.serialize_keras_object(self._encoder)
+        }
+        return {**base_config, **config}
+
+    @classmethod
+    def from_config(cls, config, custom_objects=None):
+        encoder_layer = keras.saving.deserialize_keras_object(config.pop("encoder"))
+        return cls(
+            encoder_layer=encoder_layer,
+            **config
+        )
 
 
 def get_vae_model(model_config_path: str,
@@ -214,16 +299,6 @@ def get_vae_model(model_config_path: str,
 
 def get_latent_diffusion_model(model_config_path: str, power: float = 1.0, shift: float = 0.0) -> LatentDiffusion:
 
-    def get_ar_noise(diff_model, batch_size: int, x=None, labels=None):
-        noise = diff_model.get_gaussian_noise(batch_size, x)
-        if keras.ops.is_tensor(labels):
-            ar_noise_std = latent_diffusion_config["ar_noise_std"]
-            for i in range(batch_size):
-                for j in range(labels.shape[-1]):
-                    updates = keras.random.normal(shape=(1,), mean=labels[i, j], stddev=ar_noise_std[str(j)])
-                    noise = keras.ops.scatter_update(noise, [(i, j)], updates)
-        return noise
-
     with open(model_config_path) as file:
         latent_diffusion_config = json.load(file)
 
@@ -255,18 +330,7 @@ def get_latent_diffusion_model(model_config_path: str, power: float = 1.0, shift
                     frequency_base=labels_enc_config["frequency_base"],
                     frequency_scaling=labels_enc_config["frequency_scaling"],
                     lookup_table=labels_enc_config["lookup_table"]
-                ),
-                nf_layer=NormalizingFlow(
-                    bijectors=[
-                        BoxCox(
-                            power_init_value=power,
-                            shift_init_value=shift,
-                            power_trainable=False,
-                            shift_trainable=False
-                        )
-                    ],
-                    add_loss=False
-                ),
+                )
             )
             # labels_encoding_layer=SinusoidalPositionalEncoding(
             #     embedding_dim=labels_enc_config["embedding_dim"],
@@ -297,70 +361,7 @@ def get_latent_diffusion_model(model_config_path: str, power: float = 1.0, shift
     return LatentDiffusion(vae=latent_diffusion_config["vae_weights_path"], diffusion=diffusion_model)
 
 
-def load_datasets(train_dataset_config_path: str,
-                  val_dataset_config_path: str,
-                  trainer_config_path: str,
-                  attribute: str = None):
-    train_data, input_shape, train_length = load_pitch_seq_dataset(dataset_config_path=train_dataset_config_path,
-                                                                   trainer_config_path=trainer_config_path,
-                                                                   attribute=attribute,
-                                                                   training=True)
-    val_data, _, val_length = load_pitch_seq_dataset(dataset_config_path=val_dataset_config_path,
-                                                     trainer_config_path=trainer_config_path,
-                                                     attribute=attribute,
-                                                     training=False)
-    return (train_data, train_length), (val_data, val_length), input_shape
-
-
-def load_pitch_seq_dataset(dataset_config_path: str,
-                           trainer_config_path: str,
-                           attribute: str = None,
-                           training: bool = False) -> tf.data.TFRecordDataset:
-    def get_input_shape():
-        input_seq_shape = batch_size, sequence_length, sequence_features
-        aux_input_shape = (batch_size, 1)
-        return input_seq_shape, aux_input_shape
-
-    def map_fn(ctx, seq):
-        input_seq = tf.transpose(seq["pitch_seq"])
-        attributes = tf.expand_dims(ctx[attribute], axis=-1) if attribute \
-            else tf.zeros(shape=(batch_size, 1))
-        target = input_seq
-        return (input_seq, attributes), target
-
-    with open(dataset_config_path) as file:
-        dataset_config = json.load(file)
-
-    with open(trainer_config_path) as file:
-        fit_config = json.load(file)["fit"]
-
-    dataset_cardinality = dataset_config.pop("dataset_cardinality")
-    batch_size = fit_config["batch_size"]
-    total_steps = fit_config["total_steps"]
-    if training:
-        dataset_steps = dataset_cardinality // batch_size
-        dataset_repeat_count = total_steps / dataset_steps
-        dataset_repeat_count = None if dataset_repeat_count < 1 else math.ceil(dataset_repeat_count)
-    else:
-        dataset_repeat_count = total_steps // (fit_config['steps_per_epoch'] * fit_config['validation_freq'])
-
-    sequence_length = dataset_config.pop("sequence_length")
-    sequence_features = dataset_config.pop("sequence_features")
-    representation = PitchSequenceRepresentation(sequence_length=sequence_length)
-    tfrecord_loader = TFRecordLoader(
-        file_pattern=dataset_config.pop("dataset_path"),
-        parse_fn=functools.partial(
-            representation.parse_example,
-            parse_sequence_feature=True,
-            attributes_to_parse=[attribute] if attribute else None
-        ),
-        map_fn=map_fn,
-        batch_size=batch_size,
-        repeat_count=dataset_repeat_count,
-        shuffle_buffer_size=dataset_config.pop("shuffle_buffer_size") or dataset_cardinality,
-        **dataset_config
-    )
-    return tfrecord_loader.load_dataset(), get_input_shape(), dataset_cardinality
+# -------------------------------------- TRAINERS --------------------------------------
 
 
 def get_latent_diffusion_trainer(trainer_config_path: Path, model: keras.Model) -> Trainer:
@@ -388,19 +389,11 @@ def get_vae_trainer(trainer_config_path: Path, model: keras.Model) -> Trainer:
     return trainer
 
 
-def get_arg_parser(description: str) -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=description)
-    parser.add_argument('--model-config-path', help='Path to the diffusion model\'s configuration file.',
-                        required=True)
-    parser.add_argument('--hierarchical-decoder', help='Use a hierarchical decoder.', action="store_true")
-    parser.add_argument('--trainer-config-path', help='Path to the trainer\'s configuration file.', required=True)
-    parser.add_argument('--train-dataset-config-path', help='Path to the train dataset\'s configuration file.',
-                        required=True)
-    parser.add_argument('--val-dataset-config-path', help='Path to the validation dataset\'s configuration file.',
-                        required=True)
-    parser.add_argument('--gpus', nargs="+", help='ID of GPUs to use for training.', required=False,
-                        default=[], type=int)
-    parser.add_argument('--gpu-memory-growth', help='Set memory growth for the selected GPUs.', action="store_true")
-    parser.add_argument('--logging-level', help='Set the logging level.', default="INFO", required=False,
-                        choices=["CRITICAL", "ERROR", "WARNING", "INFO"])
-    return parser
+def get_lc_vae_trainer(trainer_config_path: Path, model: keras.Model) -> Trainer:
+    trainer = Trainer(model, config_file_path=trainer_config_path)
+    trainer.compile(
+        lr_schedule=keras.optimizers.schedules.ExponentialDecay(
+            **trainer.config["compile"]["optimizer"]["config"]["learning_rate"]
+        )
+    )
+    return trainer
