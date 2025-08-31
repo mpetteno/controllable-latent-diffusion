@@ -124,6 +124,19 @@ def test_model_generation(args):
                   args=args)
 
 
+def kld(true, gen, bins='auto'):
+    bins = len(np.unique(true))
+    hist_true, bins = np.histogram(true, bins=bins, density=True)
+    hist_gen, _ = np.histogram(gen, bins=bins, density=True)
+
+    # Add a small constant to avoid division by zero and log(0) errors.
+    epsilon = 1e-12
+    hist_true = hist_true + epsilon
+    hist_gen = hist_gen + epsilon
+
+    return scipy.stats.entropy(hist_true, hist_gen, base=2)
+
+
 def plots(sequences, labels, output_dir: Path, attribute: str, args):
     output_dir.mkdir(parents=True, exist_ok=True)
     logging.info("Computing sequences attributes...")
@@ -141,6 +154,8 @@ def plots(sequences, labels, output_dir: Path, attribute: str, args):
         plt.xlabel(r'$a$')
         plt.savefig(filename, format='png', dpi=300)
         plt.close()
+    # ------------------------------------------------------------------------------------------------------------
+    logging.info(f"KLD {kld(np.array(sequences_attrs), np.array(labels))}")
     # ------------------------------------------------------------------------------------------------------------
     logging.info("Computing coefficients and plotting graph with the best linear fitting model...")
     pearson_coefficient = scipy.stats.pearsonr(sequences_attrs, labels)

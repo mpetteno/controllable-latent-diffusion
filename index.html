@@ -1,26 +1,637 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>My GitHub Page</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      text-align: center;
-      padding: 50px;
-      background: #f4f4f4;
-    }
-    h1 {
-      color: #333;
-    }
-    a {
-      color: #0366d6;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <title>Supplementary Material – MIDI Files Analysis</title>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <script src="https://colxi.info/midi-parser-js/src/main.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.0/es5/tex-mml-chtml.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px;
+            line-height: 1.6;
+        }
+
+        h1, h2, h3, h4 {
+            text-align: center;
+        }
+
+        hr.gray-line {
+            border: 0;
+            height: 1px;
+            background-image: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.25), rgba(0, 0, 0, 0));
+            margin: 40px 0;
+        }
+
+        .results-section {
+            margin-bottom: 40px;
+        }
+
+        .tables-container {
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+
+        .table-container {
+            flex: 1 1 45%;
+            max-width: 400px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .table-container img {
+            width: 100%;
+            height: auto;
+            border: 1px solid #ccc;
+        }
+
+        .attribute-section {
+            margin-bottom: 80px;
+        }
+
+        .subsection {
+            margin-bottom: 50px;
+        }
+
+        h4 {
+            margin-top: 30px;
+            font-size: 1.2em;
+            color: #444;
+        }
+
+        .baselines-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            justify-items: center;
+            margin-top: 20px;
+        }
+
+        .our-model-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .our-model-plot {
+            margin-bottom: 10px;
+        }
+
+        .plot-container img {
+            width: 100%;
+            max-width: 200px;
+            height: auto;
+            border: 1px solid #ccc;
+            background: #f9f9f9;
+            padding: 4px;
+        }
+
+        .our-model-plot img {
+            width: 100%;
+            max-width: 350px;
+            height: auto;
+            border: 1px solid #ccc;
+            background: #f9f9f9;
+            padding: 4px;
+        }
+
+        .midi-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            justify-items: center;
+            width: 100%;
+            max-width: 900px;
+            margin-top: 20px;
+        }
+
+        .midi-item {
+            width: 100%;
+            max-width: 300px;
+            text-align: center;
+        }
+
+        .piano-roll {
+            width: 100%;
+            height: 150px;
+            background: white;
+            border: 1px solid #ddd;
+        }
+
+        .midi-caption {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.3;
+            flex-grow: 1;
+            text-align: left;
+        }
+
+        .btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 0;
+            margin: 0;
+        }
+
+        .btn:hover {
+            opacity: 0.8;
+        }
+
+        .btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        .speaker-icon {
+            fill: rgb(48, 109, 161);
+            width: 24px;
+            height: 24px;
+        }
+
+        .baseline-labels {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            text-align: center;
+            font-weight: bold;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .caption-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            max-width: 280px;
+        }
+
+        .caption {
+            text-align: center;
+            font-style: italic;
+            margin-top: 15px;
+            color: #555;
+            font-size: 14px;
+        }
+
+        .loading {
+            text-align: center;
+            color: #666;
+            padding: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .baselines-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .midi-grid {
+                grid-template-columns: 1fr;
+            }
+            .tables-container {
+                flex-direction: column;
+                align-items: center;
+            }
+            .table-container {
+                flex: 1 1 90%;
+            }
+        }
+    </style>
 </head>
 <body>
-  <h1>Welcome to My GitHub Page</h1>
-  <p>This is a simple HTML page hosted with <strong>GitHub Pages</strong>.</p>
+
+<h1>Supplementary Material</h1>
+<p>This page contains the analysis for the paper <strong>Conditional Diffusion As Latent Constraints for Controllable
+    Symbolic Music Generation</strong>.</p>
+
+<div class="results-section">
+    <h2>Results</h2>
+    <div class="tables-container">
+        <div class="table-container">
+            <img src="assets/tables/pearson.png" alt="Pearson coefficient table">
+        </div>
+        <div class="table-container">
+            <img src="assets/tables/fmd.png" alt="Frechet Music Distance table">
+        </div>
+    </div>
+</div>
+
+<div class="attribute-section">
+    <h2>Contour</h2>
+
+    <div class="subsection">
+        <h3>Baselines</h3>
+        <div class="baseline-labels">
+            <div>NM</div>
+            <div>P&L</div>
+            <div>LC-VAE-A</div>
+            <div>LC-VAE-SE</div>
+        </div>
+        <div class="baselines-grid">
+            <div class="plot-container">
+                <img src="assets/attributes/contour/plots/naive-ar-vae_labels_vs_attribute.png" alt="Contour Baseline NM">
+            </div>
+            <div class="plot-container">
+                <img src="assets/attributes/contour/plots/sign-ar-vae_labels_vs_attribute.png" alt="Contour Baseline P&L">
+            </div>
+            <div class="plot-container">
+                <img src="assets/attributes/contour/plots/lc-vae-a_labels_vs_attribute.png" alt="Contour Baseline LC-VAE-A">
+            </div>
+            <div class="plot-container">
+                <img src="assets/attributes/contour/plots/lc-vae-se_labels_vs_attribute.png" alt="Contour Baseline LC-VAE-SE">
+            </div>
+        </div>
+        <p class="caption">Relationship between the predicted and ground truth attributes for the baselines.</p>
+    </div>
+
+    <div class="subsection">
+        <h3>LC-Diff</h3>
+        <div class="our-model-container">
+            <div class="our-model-plot">
+                <img src="assets/attributes/contour/plots/lc-diff_labels_vs_attribute.png" alt="Contour LC-Diff">
+            </div>
+            <p class="caption">Relationship between the predicted and ground truth attributes for our model, LC-Diff.</p>
+            <h4>MIDI Examples</h4>
+            <div class="midi-grid" id="contourMidiGrid">
+                <div class="loading">Loading MIDI files...</div>
+            </div>
+        </div>
+    </div>
+</div>
+<hr class="gray-line">
+
+<script>
+    // Configuration - Updated with correct file paths
+    const CONFIG = {
+        midi: {
+            toussaint: {
+                path: 'assets/attributes/toussaint/midi/',
+                files: []
+            },
+            contour: {
+                path: 'assets/attributes/contour/midi/',
+                files: [
+                    'gen_contour_cond_0.340910_seq_0.340909_4220.midi',
+                    'gen_contour_cond_0.852270_seq_0.863636_2889.midi',
+                    'gen_contour_cond_1.306820_seq_1.306818_1029.midi',
+                    'gen_contour_cond_2.795450_seq_2.613636_16895.midi',
+                    'gen_contour_cond_3.022730_seq_2.920455_19981.midi',
+                    'gen_contour_cond_4.227270_seq_4.170455_6681.midi',
+                    'gen_contour_cond_5.159090_seq_5.090909_6426.midi',
+                    'gen_contour_cond_6.329550_seq_6.431818_14282.midi',
+                    'gen_contour_cond_8.215910_seq_8.840909_9723.midi'
+                ]
+            },
+            pitch_range: {
+                path: 'assets/attributes/pitch_range/midi/',
+                files: []
+            },
+            note_density: {
+                path: 'assets/attributes/note_density/midi/',
+                files: []
+            }
+        }
+    };
+
+    // MathJax setup
+    MathJax.typesetPromise();
+
+    // Audio setup
+    let synth;
+    let reverb;
+    let delay;
+    let currentlyPlaying = null;
+
+    async function initAudio() {
+        if (!synth) {
+            await Tone.start();
+            Tone.Transport.bpm.value = 120; // Set BPM to 120
+            Tone.Transport.bpm.units = "bpm"; // Optional, ensures units are in BPM
+
+            reverb = new Tone.Reverb({
+                decay: 1.5,
+                wet: 0.2
+            }).toDestination();
+
+            delay = new Tone.FeedbackDelay({
+                delayTime: "8n",
+                feedback: 0.3,
+                wet: 0.1
+            }).toDestination();
+
+            synth = new Tone.PolySynth(Tone.Synth).chain(reverb, delay);
+        }
+    }
+
+    // Helper: Convert ArrayBuffer -> Base64 string
+    function arrayBufferToBase64(buffer) {
+        return new Promise((resolve, reject) => {
+            const blob = new Blob([buffer]);
+            const reader = new FileReader();
+            reader.onload = () => {
+                const base64 = reader.result.split(",")[1];
+                resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    }
+
+    async function parseMIDI(arrayBuffer) {
+        let base64 = await arrayBufferToBase64(arrayBuffer);
+        return MidiParser.parse(base64);
+    }
+
+    function drawPianoRoll(canvas, midiData, notes, options = {}) {
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+
+        ctx.fillStyle = '#fafafa';
+        ctx.fillRect(0, 0, width, height);
+
+        if (!notes || notes.length === 0) return;
+
+        const allNotes = notes.map(n => n.note);
+        const minNote = Math.min(...allNotes);
+        const maxNote = Math.max(...allNotes);
+        const maxTime = Math.max(...notes.map(n => n.end));
+
+        const noteRange = Math.max(maxNote - minNote, 12);
+        const timeScale = width / maxTime;
+        const noteScale = height / (noteRange + 1);
+
+        ctx.strokeStyle = '#e0e0e0';
+        ctx.lineWidth = 1;
+
+        for (let i = 0; i <= 16; i++) {
+            const x = (width / 16) * i;
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, height);
+            ctx.stroke();
+        }
+
+        for (let i = 0; i <= noteRange; i++) {
+            const y = height - (i * noteScale);
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(width, y);
+            ctx.stroke();
+        }
+
+        notes.forEach(note => {
+            const x = note.start * timeScale;
+            const y = height - ((note.note - minNote + 1) * noteScale);
+            const w = Math.max(note.duration * timeScale, 2);
+            const h = noteScale * 0.8;
+
+            const hue = 320 - (note.velocity / 127) * 40;
+            ctx.fillStyle = `hsl(${hue}, 70%, 50%)`;
+            ctx.fillRect(x, y, w, h);
+
+            ctx.strokeStyle = '#333';
+            ctx.strokeRect(x, y, w, h);
+        });
+
+        if (options.playhead !== undefined) {
+            const playheadX = options.playhead * timeScale;
+            ctx.strokeStyle = 'rgb(48, 109, 161)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(playheadX, 0);
+            ctx.lineTo(playheadX, height);
+            ctx.stroke();
+        }
+    }
+
+    async function playMIDI(midiData, button, canvas) {
+        const playIcon = `<svg class="speaker-icon" viewBox="0 0 24 24"><path d="M14 3.23V5.29C16.89 6.15 19 8.83 19 12C19 15.17 16.89 17.85 14 18.71V20.77C18 19.86 21 16.29 21 12S18 4.14 14 3.23M16.5 12C16.5 10.23 15.65 8.71 14.5 7.91V16.09C15.65 15.29 16.5 13.77 16.5 12M3 9V15H7L12 20V4L7 9H3Z"></path></svg>`;
+        const stopIcon = `<svg class="speaker-icon" viewBox="0 0 24 24"><path d="M3 9H7L12 4V20L7 15H3V9M16 9H21V15H16V9Z" /></svg>`;
+
+        if (currentlyPlaying) {
+            Tone.Transport.stop();
+            Tone.Transport.cancel();
+            currentlyPlaying.innerHTML = playIcon;
+            currentlyPlaying.disabled = false;
+            currentlyPlaying = null;
+            return;
+        }
+        await initAudio();
+        button.innerHTML = stopIcon;
+        currentlyPlaying = button;
+        const notes = [];
+        let maxTime = 0;
+        midiData.track.forEach(track => {
+            let currentTime = 0;
+            const activeNotes = new Map();
+            track.event.forEach(event => {
+                currentTime += (event.deltaTime || 0) / midiData.timeDivision;
+                if (event.type === 9) {
+                    const noteNumber = event.data[0];
+                    const velocity = event.data[1];
+                    if (velocity > 0) {
+                        activeNotes.set(noteNumber, {
+                            note: noteNumber,
+                            start: currentTime,
+                            velocity: velocity
+                        });
+                    } else {
+                        const noteInfo = activeNotes.get(noteNumber);
+                        if (noteInfo) {
+                            const duration = currentTime - noteInfo.start;
+                            notes.push({
+                                start: noteInfo.start,
+                                end: currentTime,
+                                duration: Math.max(duration, 0.05),
+                                note: noteInfo.note,
+                                velocity: noteInfo.velocity
+                            });
+                            activeNotes.delete(noteNumber);
+                            maxTime = Math.max(maxTime, currentTime);
+                        }
+                    }
+                }
+            });
+        });
+        notes.forEach(note => {
+            Tone.Transport.schedule(time => {
+                synth.triggerAttackRelease(
+                    Tone.Frequency(note.note, "midi").toFrequency(),
+                    note.duration,
+                    time,
+                    note.velocity / 127
+                );
+            }, note.start);
+        });
+        Tone.Transport.scheduleRepeat(time => {
+            const position = Tone.Transport.seconds;
+            drawPianoRoll(canvas, midiData, notes, {
+                playhead: position
+            });
+        }, "16n");
+        Tone.Transport.start();
+        setTimeout(() => {
+            if (currentlyPlaying === button) {
+                Tone.Transport.stop();
+                Tone.Transport.cancel();
+                button.innerHTML = playIcon;
+                button.disabled = false;
+                currentlyPlaying = null;
+                drawPianoRoll(canvas, midiData, notes);
+            }
+        }, (maxTime + 1) * 1000);
+    }
+
+    function parseFilename(filename) {
+        const pattern = /_cond_([+-]?\d*\.?\d+)_seq_([+-]?\d*\.?\d+)_\d+\.midi/;
+        const match = filename.match(pattern);
+
+        if (match) {
+            return {
+                value1: parseFloat(match[1]),
+                value2: parseFloat(match[2])
+            };
+        }
+        return null;
+    }
+
+    async function loadMIDIFile(path, filename) {
+        try {
+            const response = await fetch(path + filename);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const arrayBuffer = await response.arrayBuffer();
+            return await parseMIDI(arrayBuffer);
+        } catch (error) {
+            console.error(`Error loading MIDI file ${filename}:`, error);
+            return null;
+        }
+    }
+
+    function createMidiItem(filename, midiData) {
+        const item = document.createElement('div');
+        item.className = 'midi-item';
+        const values = parseFilename(filename);
+        const canvas = document.createElement('canvas');
+        canvas.className = 'piano-roll';
+        canvas.width = 300;
+        canvas.height = 150;
+
+        const playButton = document.createElement('button');
+        playButton.className = 'btn';
+        playButton.innerHTML = `<svg class="speaker-icon" viewBox="0 0 24 24"><path d="M14 3.23V5.29C16.89 6.15 19 8.83 19 12C19 15.17 16.89 17.85 14 18.71V20.77C18 19.86 21 16.29 21 12S18 4.14 14 3.23M16.5 12C16.5 10.23 15.65 8.71 14.5 7.91V16.09C15.65 15.29 16.5 13.77 16.5 12M3 9V15H7L12 20V4L7 9H3Z"></path></svg>`;
+
+        const captionContainer = document.createElement('div');
+        captionContainer.className = 'caption-container';
+
+        const caption = document.createElement('div');
+        caption.className = 'midi-caption';
+        if (values) {
+            caption.innerHTML = `<span>$$a_g = ${values.value1.toFixed(3)} \\rightarrow a = ${values.value2.toFixed(3)}$$</span>`;
+        } else {
+            caption.innerHTML = 'Unable to parse values';
+        }
+        MathJax.typesetPromise([caption]);
+
+        captionContainer.appendChild(playButton);
+        captionContainer.appendChild(caption);
+
+        item.appendChild(canvas);
+        item.appendChild(captionContainer);
+
+        if (midiData && midiData.track) {
+            const notes = [];
+            midiData.track.forEach(track => {
+                let currentTime = 0;
+                const activeNotes = new Map();
+                track.event.forEach(event => {
+                    currentTime += (event.deltaTime || 0) / midiData.timeDivision;
+                    if (event.type === 9) {
+                        const noteNumber = event.data[0];
+                        const velocity = event.data[1];
+                        if (velocity > 0) {
+                            activeNotes.set(noteNumber, {
+                                note: noteNumber,
+                                start: currentTime,
+                                velocity: velocity
+                            });
+                        } else {
+                            const noteInfo = activeNotes.get(noteNumber);
+                            if (noteInfo) {
+                                const duration = currentTime - noteInfo.start;
+                                notes.push({
+                                    start: noteInfo.start,
+                                    end: currentTime,
+                                    duration: Math.max(duration, 0.05),
+                                    note: noteInfo.note,
+                                    velocity: noteInfo.velocity
+                                });
+                                activeNotes.delete(noteNumber);
+                            }
+                        }
+                    }
+                });
+            });
+            drawPianoRoll(canvas, midiData, notes);
+            playButton.addEventListener('click', () => {
+                playMIDI(midiData, playButton, canvas);
+            });
+        } else {
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ff6b6b';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Error loading MIDI', canvas.width / 2, canvas.height / 2);
+            playButton.disabled = true;
+        }
+        return item;
+    }
+
+    async function loadMIDIFiles() {
+        const grids = {
+            rhythm_complexity: document.getElementById('rhythmMidiGrid'),
+            contour: document.getElementById('contourMidiGrid'),
+            pitch_range: document.getElementById('pitchRangeMidiGrid'),
+            note_density: document.getElementById('noteDensityMidiGrid')
+        };
+
+        for (const [attribute, grid] of Object.entries(grids)) {
+            if (!grid) continue;
+
+            grid.innerHTML = '';
+
+            const attributeConfig = CONFIG.midi[attribute];
+
+            if (!attributeConfig || !attributeConfig.files || attributeConfig.files.length === 0) {
+                grid.innerHTML = '<div class="loading">No files configured</div>';
+                continue;
+            }
+
+            for (const filename of attributeConfig.files.slice(0, 9)) {
+                const midiData = await loadMIDIFile(attributeConfig.path, filename);
+                const midiItem = createMidiItem(filename, midiData);
+                grid.appendChild(midiItem);
+            }
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', loadMIDIFiles);
+</script>
+
 </body>
 </html>

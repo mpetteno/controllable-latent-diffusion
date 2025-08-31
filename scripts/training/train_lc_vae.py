@@ -1,24 +1,23 @@
 """
 Usage example:
 
-    python ./scripts/ml/training/train_latent_diffusion.py \
-        --model-config-path=./scripts/training/config/local/models/latent_diffusion.json \
-        --trainer-config-path=./scripts/training/config/local/trainers/latent_diffusion_trainer.json \
-        --train-dataset-config-path=./scripts/training/config/local/datasets/train_dataset.json \
-        --val-dataset-config-path=./scripts/training/config/local/datasets/val_dataset.json \
-        --attribute=contour \
-        --gpus=0
-
+python ./scripts/training/train_lc_vae.py \
+        --model-config-path=./scripts/training/config/new_models/lc_vae.json \
+        --trainer-config-path=./scripts/training/config/new_trainers/lc_vae_trainer.json \
+        --train-dataset-config-path=./scripts/training/config/datasets/train_dataset.json \
+        --val-dataset-config-path=./scripts/training/config/datasets/val_dataset.json \
+        --hierarchical-decoder \
+        --gpus=0 \
+        --attribute=contour
 """
 import logging
 
 from resolv_ml.training.callbacks import LearningRateLoggerCallback
 
-from scripts.training import utilities
-
+import utilities
 
 if __name__ == '__main__':
-    arg_parser = utilities.get_arg_parser(description="Train latent diffusion model.")
+    arg_parser = utilities.get_arg_parser(description="Train latent constraint VAE model.")
     arg_parser.add_argument('--attribute', help='Attribute to regularize.', required=True)
     args = arg_parser.parse_args()
 
@@ -32,12 +31,13 @@ if __name__ == '__main__':
             trainer_config_path=args.trainer_config_path,
             attribute=args.attribute
         )
-        latent_diffusion = utilities.get_latent_diffusion_model(
-            model_config_path=args.model_config_path
+        lc_vae = utilities.get_lc_vae_model(
+            model_config_path=args.model_config_path,
+            trainer_config_path=args.trainer_config_path
         )
-        latent_diffusion.build(input_shape)
-        trainer = utilities.get_latent_diffusion_trainer(
-            model=latent_diffusion, trainer_config_path=args.trainer_config_path
+        lc_vae.build(input_shape)
+        trainer = utilities.get_lc_vae_trainer(
+            model=lc_vae, trainer_config_path=args.trainer_config_path
         )
         history = trainer.train(
             train_data=train_data[0],
