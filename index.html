@@ -489,13 +489,13 @@
 
             reverb = new Tone.Reverb({
                 decay: 1.5,
-                wet: 0.2
+                wet: 0.4
             }).toDestination();
 
             delay = new Tone.FeedbackDelay({
                 delayTime: "8n",
                 feedback: 0.3,
-                wet: 0.1
+                wet: 0.7
             }).connect(reverb);
 
             synth = new Tone.PolySynth(Tone.Synth).connect(delay);
@@ -605,7 +605,7 @@
             let currentTime = 0;
             const activeNotes = new Map();
             track.event.forEach(event => {
-                currentTime += (event.deltaTime || 0) / midiData.timeDivision;
+                currentTime += (event.deltaTime || 0) / (midiData.timeDivision * 2);
                 if (event.type === 9) {
                     const noteNumber = event.data[0];
                     const velocity = event.data[1];
